@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+:root{
+  --bg:#0b0b0d;
+  --panel:#141417;
+  --accent:#5865F2;
+  --danger:#ef4444;
+  --ok:#22c55e;
+  --text:#f8fafc;
+  --muted:#9ca3af;
+}
+
+body{
+  margin:0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Arial;
+}
+
+.panel{
+  width:700px;
+  background:var(--panel);
+  padding:20px;
+  border-radius:14px;
+}
+
+.tabs{
+  display:flex;
+  gap:5px;
+  margin-bottom:15px;
+}
+
+.tab{
+  flex:1;
+  padding:10px;
+  background:#1f1f25;
+  text-align:center;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+.tab.active{
+  background:var(--accent);
+}
+
+.section{display:none}
+.section.active{display:block}
+
+input,select,button{
+  width:100%;
+  padding:10px;
+  border:none;
+  border-radius:10px;
+  margin-top:6px;
+  background:#1f1f25;
+  color:white;
+}
+
+button{
+  background:var(--accent);
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button.danger{background:var(--danger)}
+button.ok{background:var(--ok)}
+
+.keyItem{
+  background:#0f1115;
+  padding:10px;
+  border-radius:10px;
+  margin-top:8px;
+  font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+
+<div class="tabs">
+<div class="tab active" onclick="tab(0)">🔑 Gerar</div>
+<div class="tab" onclick="tab(1)">📋 Listar</div>
+<div class="tab" onclick="tab(2)">⚠ Gerenciar</div>
+</div>
+
+<!-- GERAR -->
+<div class="section active">
+
+<input id="prefix" value="FERRAO">
+<input id="qty" type="number" value="3">
+
+<select id="type">
+<option value="daily">Daily</option>
+<option value="weekly">Weekly</option>
+<option value="perm">Perm</option>
+</select>
+
+<button onclick="generate()">Gerar</button>
+
+<pre id="out"></pre>
+
+</div>
+
+<!-- LISTAR -->
+<div class="section">
+<button onclick="loadKeys()">Atualizar</button>
+<div id="list"></div>
+</div>
+
+<!-- GERENCIAR -->
+<div class="section">
+
+<input id="manage" placeholder="Cole a key">
+
+<button class="ok" onclick="resetDevice()">Reset Device</button>
+<button class="danger" onclick="revoke()">Revogar</button>
+<button class="danger" onclick="del()">Deletar</button>
+
+<pre id="manageOut"></pre>
+
+</div>
+
+</div>
+
+<script>
+
+const API="https://teste-api-mcok.vercel.app/keys";
+const chars="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+function tab(i){
+document.querySelectorAll(".tab").forEach((t,x)=>t.classList.toggle("active",x===i));
+document.querySelectorAll(".section").forEach((s,x)=>s.classList.toggle("active",x===i));
+}
+
+function rand(len){
+let s="";
+for(let i=0;i<len;i++){
+s+=chars[Math.floor(Math.random()*chars.length)];
+}
+return s;
+}
+
+function expire(type){
+if(type==="daily") return 86400;
+if(type==="weekly") return 604800;
+return 0;
+}
+
+function buildPrefix(){
+return `${prefix.value.toUpperCase()}-${type.value.toUpperCase()}-`;
+}
+
+async function generate(){
+
+out.textContent="";
+
+for(let i=0;i<qty.value;i++){
+
+const key = buildPrefix()+rand(8);
+
+await fetch(API,{
+method:"POST",
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({
+key:key,
+type:type.value,
+createdAt:Date.now(),
+activatedAt:0
+})
+});
+
+out.textContent+=key+"\n";
+}
+}
+
+function timer(k){
+
+if(!k.activatedAt || k.type==="perm") return "";
+
+const end=k.activatedAt + expire(k.type)*1000;
+const left=end-Date.now();
+
+if(left<=0) return "EXPIRADA";
+
+const h=Math.floor(left/3600000);
+const m=Math.floor((left%3600000)/60000);
+const s=Math.floor((left%60000)/1000);
+
+return `${h}h ${m}m ${s}s`;
+}
+
+async function loadKeys(){
+
+list.innerHTML="Carregando...";
+
+const res=await fetch(API);
+const data=await res.json();
+
+list.innerHTML="";
+
+data.forEach(k=>{
+
+const div=document.createElement("div");
+div.className="keyItem";
+
+div.innerHTML=`
+<b>${k.key}</b><br>
+Tipo: ${k.type}<br>
+Usada: ${k.used}<br>
+Device: ${k.device || "—"}<br>
+${timer(k)?`Tempo restante: ${timer(k)}`:""}
+`;
+
+list.appendChild(div);
+
+});
+}
+
+async function resetDevice(){
+
+await fetch(`${API}/${manage.value}`,{
+method:"PUT",
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({
+used:false,
+device:null,
+activatedAt:0
+})
+});
+
+manageOut.textContent="Device resetado";
+}
+
+async function revoke(){
+
+await fetch(`${API}/${manage.value}`,{
+method:"PUT",
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({
+revoked:true
+})
+});
+
+manageOut.textContent="Key revogada";
+}
+
+async function del(){
+
+await fetch(`${API}/${manage.value}`,{
+method:"DELETE"
+});
+
+manageOut.textContent="Key deletada";
+
+loadKeys();
+}
+
+</script>
+
+</body>
+</html>
